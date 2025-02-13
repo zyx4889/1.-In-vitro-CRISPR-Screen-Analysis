@@ -1,4 +1,4 @@
-# 1. In Vitro CRISPR Screen Computational Pipeline for Identifying Synthetic Lethal Targets to MYC inhibitors (or any other inhibitors)
+# 1. CRISPR Screen Computational Pipeline for Identifying Synthetic Lethal Targets to MYC inhibitors (or any other inhibitors)
 This repository provides a **step-by-step computational workflow** for analyzing **whole-genome CRISPR screening data**, from raw sequencing files to hit identification and pathway analysis.  
 While this guide uses a **MYC inhibitor study** as an example, the methods described here are broadly applicable to **any CRISPR screen** investigating synthetic lethality, biomarker identification and combination drug strategies.  
 This pipeline leverages **MAGeCK** and **DrugZ**, two widely used tools for CRISPR screen analysis, and provides detailed instructions for setup, execution, and interpretation of results.  
@@ -356,20 +356,23 @@ Here's how to document your DrugZ analysis in a clear, cohesive format matching 
 
 ---
 
-## 7. DrugZ Analysis  
-Alternative to the MAGeCK MLE method above, my top choice for hit calling for chemogenomic screens is DrugZ. 
-DrugZ Identifies treatment-specific genetic dependencies using a Z-score based approach (Hart *et al.*, 2015). Particularly effective for:  
+## 7. DrugZ Analysis
+
+Alternative to the MAGeCK MLE method above, my top choice for hit calling in chemogenomic screens is **DrugZ**. DrugZ identifies treatment-specific genetic dependencies using a Z-score–based approach (Hart *et al.*, [2015](https://doi.org/10.1016/j.cell.2015.11.015)). It is particularly effective for:
+
 - Paired control/treatment comparisons  
 - Synthetic lethal interaction discovery  
 
 ### Code Implementation  
 
-I am using Jupyter Notebook to execute the code here (drugZ python file in the same folder as the Jupyter file)
+I execute DrugZ via a Jupyter Notebook. The `drugz.py` file (available from the [Hart Lab GitHub repository](https://github.com/hart-lab/drugz)) is placed in the same folder as the notebook. Below is the annotated code used for the analysis:
 
-**Jupyter Notebook** ([6_DrugZ.ipynb](./Code/6_DrugZ.ipynb)):  
+**Jupyter Notebook** ([DrugZ.ipynb](./Data/DrugZ.ipynb)):  
 ```python
-%matplotlib inline
-import drugz as dz
+# Import necessary packages 
+import numpy as np                   # For numerical operations
+import pandas as pd                  # For data manipulation and analysis
+import drugz as dz                   # For performing DrugZ analysis on CRISPR screening data
 
 # Configuration
 class Args:
@@ -387,83 +390,227 @@ class Args:
 drugz_results = dz.drugZ_analysis(Args())
 ```
 
-### Key Parameters  
+# Key Parameters  
 
-| Parameter | Purpose | Optimal Setting |  
-|-----------|---------|-----------------|  
-| `control_samples` | Baseline condition columns | Must match count matrix headers |  
-| `drug_samples` | Treatment condition columns | Requires ≥2 replicates |  
-| `remove_genes` | Exclude non-functional guides | "LacZ,luciferase" as negative controls |  
-| `pseudocount` | Additive smoothing | 5 (default) prevents log(0) |  
-| `half_window_size` | Local noise estimation | 500 genes (genome-wide screens) |  
+| Parameter           | Purpose                                             | Optimal Setting                           |
+|---------------------|-----------------------------------------------------|-------------------------------------------|
+| `control_samples`   | Specifies control condition columns               | Must exactly match headers in the count file  |
+| `drug_samples`      | Specifies treatment condition columns             | Requires at least 2 replicates            |
+| `remove_genes`      | Excludes non-targeting guides or control genes      | E.g., `"LacZ,luciferase,EGFR"`             |
+| `pseudocount`       | Prevents division by zero by smoothing counts       | Default is `5`                           |
+| `half_window_size`  | Used for local noise estimation in sgRNA data       | Default is `500` for whole-genome screens  |
 
-### Execution Steps  
+# Execution Steps
+
 1. **Prepare Input**:  
-   - Use MAGeCK-normalized counts (`MYCi_screen.count.txt`)  
-   - Verify column headers match sample names  
+   - Use the MAGeCK-normalized counts file (`MYCi_screen.count.txt`) generated from step 5, ensuring that the column headers match the sample names provided in the `Args` class.
+   - Place the `drugz.py` file in the same directory as your Jupyter Notebook (download from [here](https://github.com/hart-lab/drugz)).
 
-2. **Run Analysis**:  
-   ```bash
-   jupyter notebook 6_DrugZ.ipynb  # Execute all cells
-   ```
-   or  
-   ```bash
-   python -m drugz --help          # Command-line alternative
-   ```
+2. **Run the Notebook**:  
+   - Open and execute the [DrugZ.ipynb](./Data/DrugZ.ipynb) file.
 
 3. **Output Files**:  
    📁 analysis/  
    ├── 📄 drugz_results.txt  # Gene Z-scores, p-values, FDR  
    └── 📄 fc_results.txt     # sgRNA log2(fold changes)  
 
----
 
 ### Results Interpretation  
 
-**drugz_results.txt Structure**:  
+**Output Structure ([drugz_results.txt](./Data/drugz_results.txt))**:  
 ```plaintext
-Gene    Z_score   p_value    FDR     Hit  
-MYC     -4.21     3.2e-05    0.001   True  
-CDK4     3.78     1.8e-04    0.009   True  
-LacZ     0.12     0.451      0.87    False
+GENE    sumZ    numObs  normZ   pval_synth  rank_synth  fdr_synth   pval_supp  rank_supp   fdr_supp
+Pmm2    -25.69  10      -6.85   3.71e-12    1           7.21e-08    1          19462       1
+Pdss2   -24.07  10      -6.41   7.09e-11    2           4.77e-07    1          19461       1
+Gpi1    -24.05  10      -6.41   7.36e-11    3           4.77e-07    1          19460       1
+Ldha    -18.49  6       -6.36   9.99e-11    4           4.86e-07    1          19459       1
+Sod2    -23.27  10      -6.20   2.84e-10    5           1.1e-06     1          19458       1
+Ndufa3  -22.78  10      -6.07   6.41e-10    6           2.08e-06    1          19457       1
 ```
 
 **Key Columns**:  
-1. **Z_score**: Treatment effect magnitude/direction  
-   - *Negative*: Enhanced drug sensitivity (synthetic lethal)  
-   - *Positive*: Drug resistance conferred by knockout  
-2. **FDR**: Adjusted significance (False Discovery Rate)  
-3. **Hit**: FDR <0.1 & |Z| >2  
+- **normZ**: The normalized Z-score for the gene, reflecting the magnitude and direction of the treatment effect.  
+  - **Negative**: Enhanced drug sensitivity (indicative of synthetic lethality).  
+  - **Positive**: Potential drug resistance conferred by gene KO
+- **pval_synth**: The p-value assessing the statistical significance of the synthetic lethal effect.
+- **rank_synth**: Synthetic lethal rank
+
+*Reference*: Medina Colic et al. (2019). [Identifying chemogenetic interactions from CRISPR screens with drugZ](https://genomemedicine.biomedcentral.com/articles/10.1186/s13073-019-0665-3)  
+Genome Medicine, 11, 52.
+
+
+## 8. Visualization
+
+After completing the DrugZ analysis, we generate a scatter plot to visualize the gene ranks (`rank_synth`) against the normalized Z-scores (`normZ`). This allows quick identification of genes showing strong negative or positive Z-scores under MYCi975 treatment.
+
+### Code Implementation ([Scatterplot.R](./Data/Scatterplot.R)): 
+
+```r
+library(ggplot2)
+library(ggrepel)
+
+# Load the DrugZ output data (e.g., drugz_results.csv)
+data <- read.csv("drugz_results.csv")
+
+p <- ggplot(data, aes(
+    x = rank_synth,      # X-axis: rank of synthetic lethality
+    y = normZ,           # Y-axis: normalized Z-score
+    color = normZ,       # Color points by Z-score value
+    label = GENE         # Labels to apply to points
+  )) +
+  geom_point(show.legend = FALSE) + 
+  scale_color_gradient(low = "red", high = "blue") +  # Negative -> Red, Positive -> Blue
+  labs(
+    title = "MyC-CaP + MYCi-975",
+    x = "Gene Rank",
+    y = "NormZ Score"
+  ) +
+  # Label top 25 genes (lowest rank_synth) in red
+  geom_text_repel(
+    data = subset(data, rank_synth < 26),
+    aes(label = GENE),
+    size = 4,
+    family = "sans",
+    colour = "red",
+    segment.color = "grey",
+    max.overlaps = 50
+  ) +
+  # Label bottom genes (highest rank_synth) in blue
+  geom_text_repel(
+    data = subset(data, rank_synth > 19455),
+    aes(label = GENE),
+    size = 4,
+    family = "sans",
+    colour = "blue",
+    segment.color = "grey",
+    max.overlaps = 50
+  ) +
+  theme_classic()
+
+# Display the plot
+p
+```
+
+### Sample Output
+![Ranked Z-score plot](./Figures/Scatterplot.png)  
 
 ---
 
-### Advantages Over MAGeCK MLE  
-1. **Noise Normalization**: Models sgRNA-specific variance  
-2. **Z-score Scale**: Directly comparable across experiments  
-3. **Hit Thresholding**: Built-in |Z|>2 cutoff reduces false positives  
+## 9. Pathway Analysis
 
-*Reference*: Hart *et al*. (2015). High-Resolution CRISPR Screens Reveal Fitness Genes and Genotype-Specific Cancer Liabilities. *Cell* 163, 1515-1526. [DOI](https://doi.org/10.1016/j.cell.2015.11.015)*
+The final step is to perform pathway analysis to identify biological processes and pathways enriched in your list of synthetic lethal targets. Here, we utilize the R package **`pathfindR`**, which systematically performs enrichment analysis across multiple pathway databases, such as KEGG, Reactome, and Gene Ontology.
 
----
+### Input Data Preparation
 
-### Quality Control  
-1. **Negative Controls**:  
-   - LacZ/luciferase should show |Z|<1 & FDR>0.5  
-2. **Replicate Correlation**:  
-   ```python
-   dz.plot_replicate_correlation(Args.infile)  
-   ```
-3. **Hit Distribution**:  
-   ```python
-   dz.plot_zscore_distribution(drugz_results)
-   ```  
-   Expected: Symmetric distribution with hits in tails  
+The input CSV (`RA_input_synergy.csv`) should have at least two columns: 
+- `Gene.symbol`: Gene identifiers (symbols)
+- `p.value`: Corresponding p-values from previous analyses (e.g., MAGeCK, DrugZ)
 
----
+Sample Input Table:
 
-This maintains your documentation style while:  
-1. Simplifying file paths for portability  
-2. Adding visualization QC steps  
-3. Clarifying Z-score interpretation  
-4. Linking to original methodology  
-5. Providing ready-to-execute code blocks
+| GENE.Symbol | NormZ  | pval       |
+|-------------|--------|------------|
+| Pmm2        | -5.465 | 2.30e-08   |
+| Ldha        | -5.060 | 2.11e-07   |
+| Pdss2       | -5.130 | 1.04e-06   |
+| Cmc1        | -4.725 | 1.99e-06   |
+| Ndufa3      | -4.820 | 3.08e-06   |
+
+Load data:
+
+```r
+library(pathfindR)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+
+input_df <- read.csv("RA_input_synergy.csv", header = TRUE)
+```
+
+### Pathway Analysis Execution
+
+We analyze enrichment across various databases:
+
+```r
+# KEGG Pathways
+output_kegg <- run_pathfindR(input_df, pin_name_path = "Biogrid", gene_sets = "KEGG")
+write.csv(output_kegg, "pathway_results_KEGG.csv", row.names = FALSE)
+
+# Reactome Pathways
+output_reactome <- run_pathfindR(input_df, gene_sets = "Reactome")
+write.csv(output_reactome, "pathway_results_Reactome.csv", row.names = FALSE)
+
+# Gene Ontology Categories
+output_go_mf <- run_pathfindR(input_df, gene_sets = "GO-MF")
+output_go_bp <- run_pathfindR(input_df, gene_sets = "GO-BP")
+output_go_cc <- run_pathfindR(input_df, gene_sets = "GO-CC")
+output_go_all <- run_pathfindR(input_df, gene_sets = "GO-All")
+
+write.csv(output_go_all, "pathway_results_GO.csv", row.names = FALSE)
+
+# BioCarta Pathways
+output_biocarta <- run_pathfindR(input_df, gene_sets = "BioCarta")
+write.csv(output_biocarta, "pathway_results_BioCarta.csv", row.names = FALSE)
+```
+
+### Selecting Top Enriched Pathways
+
+Here we focus on BioCarta pathways as an example:
+
+```r
+# Order pathways by fold enrichment
+output_biocarta <- output_biocarta %>%
+  arrange(desc(Fold_Enrichment))
+
+# Count number of genes per pathway
+output_biocarta$Gene_Count <- str_count(output_biocarta$Down_regulated, '\\w+')
+
+# Select Top 15 pathways based on Fold Enrichment
+top15 <- output_biocarta %>% 
+  top_n(15, Fold_Enrichment)
+
+# Calculate -log10(p-value)
+top15$log_p <- -log10(top15$lowest_p)
+```
+
+Sample Output Table:
+
+| ID          | Term_Description                                     | Fold_Enrichment | lowest_p | Down_regulated                         | freq |
+|-------------|------------------------------------------------------|-----------------|----------|----------------------------------------|------|
+| GO:0032981  | mitochondrial respiratory chain complex I assembly   | 49.81           | 3.68e-40 | NDUFA1, NDUFA2, NDUFA3, NDUFA6...      | 25   |
+| GO:0005747  | mitochondrial respiratory chain complex I            | 43.88           | 3.48e-31 | NDUFA1, NDUFA2, NDUFA3, NDUFA6...      | 19   |
+| GO:0008137  | NADH dehydrogenase (ubiquinone) activity             | 36.29           | 1.20e-08 | NDUFS1, NDUFS2, NDUFS8, NDUFV2...      | 5    |
+
+### Visualization of Top Pathways
+
+Generate an informative scatter plot for enriched pathways:
+
+```r
+ggplot(top15, aes(x = Fold_Enrichment, 
+                  y = reorder(Term_Description, Fold_Enrichment), 
+                  color = log_p, 
+                  size = Gene_Count)) + 
+  geom_point() +
+  scale_color_gradient2(low = "darkgreen", mid = "seagreen3", high = "indianred2", 
+                        midpoint = median(top15$log_p)) +
+  scale_size_continuous(range = c(3, 10)) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text = element_text(size = 12),
+    axis.ticks.x = element_line(colour = "black"),
+    axis.line.x = element_line(colour = "black"),
+    legend.position = "right",
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    aspect.ratio = 3
+  ) +
+  labs(
+    y = NULL,
+    x = "Fold Enrichment",
+    color = "-log10(p-value)",
+    size = "Gene Count",
+    title = "Top 15 Enriched BioCarta Pathways"
+  )
+```
+
