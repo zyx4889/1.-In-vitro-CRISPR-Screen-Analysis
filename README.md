@@ -498,15 +498,26 @@ p
 
 ## 9. Pathway Analysis
 
-The final step is to perform pathway analysis to identify biological processes and pathways enriched in your list of synthetic lethal targets. Here, we utilize the R package **`pathfindR`**, which systematically performs enrichment analysis across multiple pathway databases, such as KEGG, Reactome, and Gene Ontology.
+The final step is to perform pathway analysis to identify biological processes and pathways enriched in your list of synthetic lethal targets. Here, we use the R package **`pathfindR`**, which systematically performs enrichment analysis across multiple pathway databases, such as KEGG, Reactome, Gene Ontology, and BioCarta.
 
-### Input Data Preparation
+### Detailed Explanation of Input Data
 
-The input CSV (`RA_input_synergy.csv`) should have at least two columns: 
-- `Gene.symbol`: Gene identifiers (symbols)
-- `p.value`: Corresponding p-values from previous analyses (e.g., MAGeCK, DrugZ)
+The input for pathway analysis (`RA_input_synergy.csv`) is directly derived from your results file generated in **Step 7 (DrugZ Analysis)**, specifically from the output file `drugz_results.txt`. From this file, the required columns to extract are:
+- `GENE`: Gene symbols.
+- `pval_synth`: P-values indicating synthetic lethality significance.
 
-Sample Input Table:
+Rename the columns to match:
+- `Gene.symbol`
+- `p.value`
+
+**Folder Structure:**
+
+```
+📁 Input/
+└── 📄 RA_input_synergy.csv
+```
+
+**Sample Input Table:**
 
 | GENE.Symbol | NormZ  | pval       |
 |-------------|--------|------------|
@@ -516,101 +527,93 @@ Sample Input Table:
 | Cmc1        | -4.725 | 1.99e-06   |
 | Ndufa3      | -4.820 | 3.08e-06   |
 
-Load data:
+### Installation and Library Loading
+
+Install and load necessary packages (run this once):
 
 ```r
+# Install required packages
+devtools::install_github("egeulgen/pathfindR")
+
+# Load essential libraries
 library(pathfindR)
 library(dplyr)
 library(ggplot2)
 library(stringr)
-
-input_df <- read.csv("RA_input_synergy.csv", header = TRUE)
 ```
 
-### Pathway Analysis Execution
-
-We analyze enrichment across various databases:
+### Pathway Analysis Execution (Cleaned and Ordered)
 
 ```r
-# KEGG Pathways
+# Load input data
+input_df <- read.csv("Input/RA_input_synergy.csv")
+
+# Perform enrichment analysis for key databases
 output_kegg <- run_pathfindR(input_df, pin_name_path = "Biogrid", gene_sets = "KEGG")
-write.csv(output_kegg, "pathway_results_KEGG.csv", row.names = FALSE)
+write.csv(output_kegg, "Output/pathway_results_KEGG.csv", row.names = FALSE)
 
-# Reactome Pathways
 output_reactome <- run_pathfindR(input_df, gene_sets = "Reactome")
-write.csv(output_reactome, "pathway_results_Reactome.csv", row.names = FALSE)
+write.csv(output_reactome, "Output/pathway_results_Reactome.csv", row.names = FALSE)
 
-# Gene Ontology Categories
-output_go_mf <- run_pathfindR(input_df, gene_sets = "GO-MF")
-output_go_bp <- run_pathfindR(input_df, gene_sets = "GO-BP")
-output_go_cc <- run_pathfindR(input_df, gene_sets = "GO-CC")
 output_go_all <- run_pathfindR(input_df, gene_sets = "GO-All")
+write.csv(output_go_all, "Output/pathway_results_GO.csv", row.names = FALSE)
 
-write.csv(output_go_all, "pathway_results_GO.csv", row.names = FALSE)
-
-# BioCarta Pathways
 output_biocarta <- run_pathfindR(input_df, gene_sets = "BioCarta")
-write.csv(output_biocarta, "pathway_results_BioCarta.csv", row.names = FALSE)
+write.csv(output_biocarta, "Output/pathway_results_BioCarta.csv", row.names = FALSE)
 ```
 
-### Selecting Top Enriched Pathways
+**Folder Structure for Output:**
+```
+📁 Output/
+├── 📄 pathway_results_KEGG.csv
+├── 📄 pathway_results_Reactome.csv
+├── 📄 pathway_results_GO.csv
+└── 📄 pathway_results_BioCarta.csv
+```
 
-Here we focus on BioCarta pathways as an example:
+### Selecting and Visualizing Top Enriched Pathways
+
+Here’s how to select and visualize top enriched pathways, demonstrated using the GO-All results:
 
 ```r
-# Order pathways by fold enrichment
-output_biocarta <- output_biocarta %>%
-  arrange(desc(Fold_Enrichment))
+# Load GO analysis results
+output_df <- read.csv("Output/pathway_results_GO.csv")
+
+# Order pathways by Fold Enrichment
+output_df <- output_df %>% arrange(desc(Fold_Enrichment))
 
 # Count number of genes per pathway
-output_biocarta$Gene_Count <- str_count(output_biocarta$Down_regulated, '\\w+')
+output_df$Gene_Count <- str_count(output_df$Down_regulated, '\\w+')
 
-# Select Top 15 pathways based on Fold Enrichment
-top15 <- output_biocarta %>% 
-  top_n(15, Fold_Enrichment)
+# Select top 15 pathways
+top15 <- output_df %>% top_n(15, Fold_Enrichment)
 
 # Calculate -log10(p-value)
 top15$log_p <- -log10(top15$lowest_p)
+
+# Visualization
+ ggplot(top15, aes(x = Fold_Enrichment, 
+                   y = reorder(Term_Description, Fold_Enrichment), 
+                   color = log_p, 
+                   size = Gene_Count)) + 
+   geom_point() +
+   scale_color_gradient2(low = "darkgreen", mid = "seagreen3", high = "indianred2", midpoint = median(top15$log_p)) +
+   scale_size_continuous(range = c(3, 10)) +
+   theme_minimal(base_size = 12) +
+   theme(
+     panel.grid = element_blank(),
+     axis.text = element_text(size = 12),
+     axis.ticks.x = element_line(colour = "black"),
+     axis.line.x = element_line(colour = "black"),
+     legend.position = "right",
+     panel.border = element_rect(color = "black", fill = NA, size = 1),
+     aspect.ratio = 3
+   ) +
+   labs(
+     y = NULL,
+     x = "Fold Enrichment",
+     color = "-log10(p-value)",
+     size = "Gene Count",
+     title = "Top 15 Enriched GO Pathways"
+   )
 ```
-
-Sample Output Table:
-
-| ID          | Term_Description                                     | Fold_Enrichment | lowest_p | Down_regulated                         | freq |
-|-------------|------------------------------------------------------|-----------------|----------|----------------------------------------|------|
-| GO:0032981  | mitochondrial respiratory chain complex I assembly   | 49.81           | 3.68e-40 | NDUFA1, NDUFA2, NDUFA3, NDUFA6...      | 25   |
-| GO:0005747  | mitochondrial respiratory chain complex I            | 43.88           | 3.48e-31 | NDUFA1, NDUFA2, NDUFA3, NDUFA6...      | 19   |
-| GO:0008137  | NADH dehydrogenase (ubiquinone) activity             | 36.29           | 1.20e-08 | NDUFS1, NDUFS2, NDUFS8, NDUFV2...      | 5    |
-
-### Visualization of Top Pathways
-
-Generate an informative scatter plot for enriched pathways:
-
-```r
-ggplot(top15, aes(x = Fold_Enrichment, 
-                  y = reorder(Term_Description, Fold_Enrichment), 
-                  color = log_p, 
-                  size = Gene_Count)) + 
-  geom_point() +
-  scale_color_gradient2(low = "darkgreen", mid = "seagreen3", high = "indianred2", 
-                        midpoint = median(top15$log_p)) +
-  scale_size_continuous(range = c(3, 10)) +
-  scale_x_continuous(breaks = scales::pretty_breaks(n = 5)) +
-  theme_minimal(base_size = 12) +
-  theme(
-    panel.grid = element_blank(),
-    axis.text = element_text(size = 12),
-    axis.ticks.x = element_line(colour = "black"),
-    axis.line.x = element_line(colour = "black"),
-    legend.position = "right",
-    panel.border = element_rect(color = "black", fill = NA, size = 1),
-    aspect.ratio = 3
-  ) +
-  labs(
-    y = NULL,
-    x = "Fold Enrichment",
-    color = "-log10(p-value)",
-    size = "Gene Count",
-    title = "Top 15 Enriched BioCarta Pathways"
-  )
-```
-
